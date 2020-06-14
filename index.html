@@ -248,10 +248,13 @@
       return new Point(glX, glY);
     }
 
-    function getInitialRatio() {
+    function getInitialRegion() {
       const screenWidth = window.innerWidth;
       const screenHeight = window.innerHeight;
       const height = (3 * screenHeight) / screenWidth;
+      const topLeft = new Point(-2, height / 2);
+      const bottomRight = new Point(1, -height / 2);
+      return { topLeft, bottomRight };
     }
 
     function onRegionSelection(canvas, callback) {
@@ -277,7 +280,11 @@
       positionAttributeLocation,
       cornersUniform,
     } = init();
-    cornersUniform.setValue(-2, 1, 1, -1);
+    const startRegion = getInitialRegion();
+    cornersUniform.setValue(
+      ...startRegion.topLeft.toArray(),
+      ...startRegion.bottomRight.toArray()
+    );
 
     window.addEventListener("resize", () => {
       updateCanvasSize(canvas);
