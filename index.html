@@ -74,7 +74,7 @@
         }
         iterations++;
       }
-      float ratio = float(iterations) / float(max_iterations);
+      float ratio = mod(float(iterations), 256.0) / 256.0;
       color = iterations < max_iterations ? vec4(palette(ratio), 1) : vec4(vec3(0.0), 1);
     }
   </script>
@@ -246,6 +246,12 @@
       const glX = glTopLeft.x + relativeDX * glWidth;
       const glY = glTopLeft.y - relativeDY * glHeight;
       return new Point(glX, glY);
+    }
+
+    function getInitialRatio() {
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+      const height = (3 * screenHeight) / screenWidth;
     }
 
     function onRegionSelection(canvas, callback) {
