@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mandelbrot</title>
+    <style type="text/css">
+      body {
+        margin: 0;
+      }
+
+      #canvas {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+  </body>
+  <script id="vertex-shader-2d" type="text/x-vertex-shader">
+    in vec4 a_position;
+    uniform vec4 u_corners;
+    out vec2 v_pos;
+    precision highp float;
+
+    void main() {
+      float glx1 = -1.0;
+      float gly1 = -1.0;
+      float glx2 = 1.0;
+      float gly2 = 1.0;
+      float gldx = glx2 - glx1;
+      float gldy = gly2 - gly1;
+      float cdx = u_corners.z - u_corners.x;
+      float cdy = u_corners.w - u_corners.y;
+      v_pos = vec2(u_corners.x + (a_position.x - glx1) / gldx * cdx, u_corners.y - (a_position.y + gly1) / gldy * cdy);
+      gl_Position = a_position;
+    }
+  </script>
+  <script id="fragment-shader-2d" type="text/x-fragment-shader">
+    #define product(a, b) vec2(a.x*b.x-a.y*b.y, a.x*b.y+a.y*b.x)
+
+    precision highp float;
+    in vec2 v_pos;
+    out vec4 color;
+
+    vec3 palette(float ratio) {
+      vec3[7] u_palette;
+      u_palette[0] = vec3(1.0, 0.0, 0.0);
+      u_palette[1] = vec3(1.0, 165.0 / 255.0, 0.0);
+      u_palette[2] = vec3(1.0, 1.0, 0.0);
+      u_palette[3] = vec3(0.0, 1.0, 0.0);
+      u_palette[4] = vec3(0.0, 0.0, 1.0);
+      u_palette[5] = vec3(43.0 / 255.0, 34.0 / 255.0, 170.0 / 255.0);
+      u_palette[6] = vec3(127.0 / 255.0, 0.0, 1.0);
+      int num_colors = u_palette.length();
+      float step = 1.0 / (float(num_colors) - 1.0);
+      float idx1 = floor(ratio / step);
+      float idx2 = ceil(ratio / step);
+      vec3 color1 = u_palette[int(idx1)];
+      vec3 color2 = u_palette[int(idx2)];
+      float a = ratio - (idx1 * step) / step;
+      return mix(color1, color2, a);
+    }
+
+    void main() {
+      vec2 z = vec2(0.0, 0.0);
+      int iterations = 0;
+      const int max_iterations = 1000;
+      for (int i = 0; i < max_iterations; i++) {
+        z = product(z, z) + v_pos;
+        if (length(z) > 2.0) {
+          break;
+        }
+        iterations++;
+      }
+      float ratio = float(iterations) / float(max_iterations);
+      color = iterations < max_iterations ? vec4(palette(ratio), 1) : vec4(vec3(0.0), 1);
+    }
+  </script>
+  <script>
+    class Point {
+      constructor(x, y) {
+        this._x = x;
+        this._y = y;
+      }
+
+      get x() {
+        return this._x;
+      }
+      get y() {
+        return this._y;
+      }
+
+      toArray() {
+        return [this.x, this.y];
+      }
+    }
+
+    class GlUniform {
+      constructor(gl, program, name) {
+        this.location = gl.getUniformLocation(program, name);
+        this.gl = gl;
+        this.value = null;
+      }
+
+      getValue() {
+        return this.value;
+      }
+
+      setValue(...args) {
+        this.gl.uniform4f(this.location, ...args);
+        this.value = args;
+      }
+    }
+
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+      if (success) {
+        return shader;
+      }
+
+      console.log(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+    }
+
+    function createProgram(gl, vertexShader, fragmentShader) {
+      const program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+      if (success) {
+        return program;
+      }
+
+      console.log(gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+    }
+
+    function init() {
+      const canvas = document.querySelector("#canvas");
+      const gl = canvas.getContext("webgl2");
+      if (!gl) {
+        window.alert("WebGL is not available");
+      }
+
+      const vertexShaderSource =
+        "#version 300 es" + document.querySelector("#vertex-shader-2d").text;
+      const fragmentShaderSource =
+        "#version 300 es" + document.querySelector("#fragment-shader-2d").text;
+
+      const vertexShader = createShader(
+        gl,
+        gl.VERTEX_SHADER,
+        vertexShaderSource
+      );
+      const fragmentShader = createShader(
+        gl,
+        gl.FRAGMENT_SHADER,
+        fragmentShaderSource
+      );
+
+      const program = createProgram(gl, vertexShader, fragmentShader);
+
+      const positionAttributeLocation = gl.getAttribLocation(
+        program,
+        "a_position"
+      );
+      const cornersUniform = new GlUniform(gl, program, "u_corners");
+
+      const positionBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      const positions = [-1, -1, -1, 1, 1, 1, -1, -1, 1, 1, 1, -1];
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(positions),
+        gl.STATIC_DRAW
+      );
+
+      gl.useProgram(program);
+
+      gl.enableVertexAttribArray(positionAttributeLocation);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      const size = 2;
+      const type = gl.FLOAT;
+      const normalize = false;
+      const stride = 0;
+      const offset = 0;
+      gl.vertexAttribPointer(
+        positionAttributeLocation,
+        size,
+        type,
+        normalize,
+        stride,
+        offset
+      );
+
+      return { canvas, gl, program, cornersUniform };
+    }
+
+    function render(gl, program, positionAttributeLocation) {
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      const primitiveType = gl.TRIANGLES;
+      gl.drawArrays(primitiveType, 0, 6);
+    }
+
+    function createPalette() {
+      const colors = [
+        [255, 0, 0],
+        [0, 255, 0],
+        [255, 0, 0],
+      ];
+      const flatColorArray = [];
+      colors.forEach((color) => {
+        color.forEach((value) => {
+          flatColorArray.push(value / 255);
+        });
+      });
+      return new Float32Array(flatColorArray);
+    }
+
+    function updateCanvasSize(canvas) {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      render(gl, program, positionAttributeLocation);
+    }
+
+    function convertCanvasCoordinateToGlCoordinate(
+      canvasCoord,
+      canvasWidth,
+      canvasHeight,
+      glTopLeft,
+      glWidth,
+      glHeight
+    ) {
+      const relativeDX = canvasCoord.x / canvasWidth;
+      const relativeDY = canvasCoord.y / canvasHeight;
+      const glX = glTopLeft.x + relativeDX * glWidth;
+      const glY = glTopLeft.y - relativeDY * glHeight;
+      return new Point(glX, glY);
+    }
+
+    function onRegionSelection(canvas, callback) {
+      canvas.addEventListener("mousedown", (event) => {
+        const center = new Point(event.clientX, event.clientY);
+        const zoomFactor = 0.5;
+        const width = canvas.clientWidth * zoomFactor;
+        const height = canvas.clientHeight * zoomFactor;
+
+        const topLeft = new Point(center.x - width / 2, center.y - height / 2);
+        const bottomRight = new Point(
+          center.x + width / 2,
+          center.y + height / 2
+        );
+        callback({ topLeft, bottomRight });
+      });
+    }
+
+    const {
+      canvas,
+      gl,
+      program,
+      positionAttributeLocation,
+      cornersUniform,
+    } = init();
+    cornersUniform.setValue(-2, 1, 1, -1);
+
+    window.addEventListener("resize", () => {
+      updateCanvasSize(canvas);
+    });
+    updateCanvasSize(canvas);
+
+    onRegionSelection(canvas, (canvasCoords) => {
+      const mandelCoords = cornersUniform.getValue();
+      const glWidth = mandelCoords[2] - mandelCoords[0];
+      const glHeight = mandelCoords[1] - mandelCoords[3];
+      const topLeft = convertCanvasCoordinateToGlCoordinate(
+        canvasCoords.topLeft,
+        canvas.clientWidth,
+        canvas.clientHeight,
+        new Point(mandelCoords[0], mandelCoords[1]),
+        glWidth,
+        glHeight
+      );
+      const bottomRight = convertCanvasCoordinateToGlCoordinate(
+        canvasCoords.bottomRight,
+        canvas.clientWidth,
+        canvas.clientHeight,
+        new Point(mandelCoords[0], mandelCoords[1]),
+        glWidth,
+        glHeight
+      );
+      cornersUniform.setValue(...topLeft.toArray(), ...bottomRight.toArray());
+      render(gl, program, positionAttributeLocation);
+    });
+  </script>
+</html>
